@@ -1,0 +1,6 @@
+{
+  "name": "VOID.AI - Cyberpunk Voice Assistant & Cloud Control",
+  "description": "Advanced Android AI voice assistant with dark cyberpunk aesthetics, Gemini Live integration, phone accessibility automation, PC Cloud remote control, and Room memory database.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

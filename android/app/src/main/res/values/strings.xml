@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">VOID.AI</string>
+    <string name="title_activity_main">VOID.AI</string>
+    <string name="package_name">com.voidai.app</string>
+    <string name="custom_url_scheme">com.voidai.app</string>
+    <string name="accessibility_service_label">VOID.AI Accessibility &amp; Screen Automation</string>
+    <string name="accessibility_service_description">Autonomous screen reading, cross-app UI clicking, and text injection assistant powered by VOID.AI.</string>
+</resources>

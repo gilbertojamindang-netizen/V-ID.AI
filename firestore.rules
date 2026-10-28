@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation blueprints
+    function isValidUserProfile(data) {
+      return data.uid is string && data.uid.size() <= 128 && data.uid == request.auth.uid &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 150)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500));
+    }
+
+    function isValidMessage(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.role in ['user', 'model'] &&
+             data.text is string && data.text.size() <= 10000 &&
+             (!('model' in data) || (data.model is string && data.model.size() <= 64)) &&
+             (!('voice' in data) || (data.voice is string && data.voice.size() <= 64));
+    }
+
+    function isValidMacro(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.triggerPhrase is string && data.triggerPhrase.size() <= 200 &&
+             data.enabled is bool &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+             (!('actionsJson' in data) || (data.actionsJson is string && data.actionsJson.size() <= 5000));
+    }
+
+    function isValidSnippet(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.language is string && data.language.size() <= 50 &&
+             data.code is string && data.code.size() <= 25000;
+    }
+
+    function isValidSettings(data) {
+      return (!('voice' in data) || data.voice in ['Charon', 'Fenrir']) &&
+             (!('pitch' in data) || data.pitch is number) &&
+             (!('speechRate' in data) || data.speechRate is number) &&
+             (!('voiceProvider' in data) || (data.voiceProvider is string && data.voiceProvider.size() <= 50)) &&
+             (!('elevenLabsVoiceId' in data) || (data.elevenLabsVoiceId is string && data.elevenLabsVoiceId.size() <= 100)) &&
+             (!('model' in data) || (data.model is string && data.model.size() <= 50)) &&
+             (!('alwaysListening' in data) || data.alwaysListening is bool);
+    }
+
+    // Diagnostics / connection test path
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    // User Profile
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming()) && incoming().uid == existing().uid;
+      allow delete: if isOwner(userId);
+
+      // User Messages Subcollection
+      match /messages/{messageId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(messageId) && isValidMessage(incoming());
+        allow update: if isOwner(userId) && isValidId(messageId) && isValidMessage(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // User Voice Macros Subcollection
+      match /macros/{macroId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(macroId) && isValidMacro(incoming());
+        allow update: if isOwner(userId) && isValidId(macroId) && isValidMacro(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // User Code Snippets Subcollection
+      match /codeSnippets/{snippetId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(snippetId) && isValidSnippet(incoming());
+        allow update: if isOwner(userId) && isValidId(snippetId) && isValidSnippet(incoming());
+        allow delete: if isOwner(userId);
+      }
+
+      // User Preferences / Settings Document
+      match /settings/{settingId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(settingId) && isValidSettings(incoming());
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
