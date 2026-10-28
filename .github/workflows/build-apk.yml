@@ -39,6 +39,7 @@ jobs:
     - name: Install and Sync Capacitor
       run: |
         bun add @capacitor/core @capacitor/cli @capacitor/android
+        rm -rf android
         bunx cap add android
         bunx cap sync android
 
