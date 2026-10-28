@@ -206,6 +206,10 @@ export const PermissionsScreenView: React.FC = () => {
   };
 
   const handleGrantAll = async () => {
+    const bridge = (window as any).AndroidBridge;
+    if (bridge && typeof bridge.requestAllPermissions === 'function') {
+      bridge.requestAllPermissions();
+    }
     for (const p of permissions) {
       if (!p.granted) {
         await handleRequestPermission(p);

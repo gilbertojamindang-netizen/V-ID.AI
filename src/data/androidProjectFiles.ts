@@ -416,29 +416,65 @@ class VoidVoiceForegroundService : Service() {
     content: `package com.voidai.app
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
-import android.webkit.WebView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {
+
+    companion object {
+        private const val TAG = "VOID_MainActivity"
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         results.forEach { (permission, isGranted) ->
-            Log.i("VOID", "Permission result -> \$permission: \$isGranted")
+            Log.i(TAG, "Permission result -> \$permission: \$isGranted")
         }
         notifyWebviewPermissionsUpdated()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        bridge?.webView?.let { webView ->
-            webView.settings.javaScriptEnabled = true
-            webView.addJavascriptInterface(VoidNativeBridge(this), "AndroidBridge")
+        attachNativeBridge()
+        // Automatically request Microphone and Camera permissions when app opens
+        checkAndRequestStartupPermissions()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        attachNativeBridge()
+        notifyWebviewPermissionsUpdated()
+    }
+
+    fun checkAndRequestStartupPermissions() {
+        val permissionsToRequest = mutableListOf<String>()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.CAMERA)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        } else {
+            notifyWebviewPermissionsUpdated()
         }
     }
 
@@ -450,15 +486,57 @@ class MainActivity : BridgeActivity() {
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
     }
 
-    fun requestSinglePermission(permission: String) {
-        permissionLauncher.launch(arrayOf(permission))
+    fun openAccessibilitySettings() {
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        startActivity(intent)
+    }
+
+    fun openOverlaySettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:\$packageName")
+            ).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+        }
+    }
+
+    fun isAccessibilityEnabled(): Boolean {
+        if (VoidAccessibilityService.isServiceRunning) return true
+        val expected = "\$packageName/\${VoidAccessibilityService::class.java.canonicalName}"
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        return enabled.contains(expected) || enabled.contains(packageName)
+    }
+
+    fun isPermissionGranted(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun attachNativeBridge() {
+        try {
+            bridge?.webView?.let { webView ->
+                webView.settings.javaScriptEnabled = true
+                webView.settings.mediaPlaybackRequiresUserGesture = false
+                webView.addJavascriptInterface(VoidNativeBridge(this), "AndroidBridge")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Bridge mount failed: \${e.message}")
+        }
     }
 
     private fun notifyWebviewPermissionsUpdated() {
-        bridge?.webView?.evaluateJavascript(
-            "if (window.__onNativePermissionsUpdated) window.__onNativePermissionsUpdated();",
-            null
-        )
+        try {
+            bridge?.webView?.post {
+                bridge?.webView?.evaluateJavascript(
+                    "if (window.__onNativePermissionsUpdated) window.__onNativePermissionsUpdated();",
+                    null
+                )
+            }
+        } catch (e: Exception) {}
     }
 }`
   },
@@ -480,6 +558,11 @@ class MainActivity : BridgeActivity() {
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -522,6 +605,21 @@ class MainActivity : BridgeActivity() {
 
     </application>
 </manifest>`
+  },
+  {
+    path: "android/app/src/main/res/xml/accessibility_service_config.xml",
+    language: "xml",
+    description: "Android Accessibility Configuration: XML flags to show VOID.AI in phone's Settings > Accessibility menu",
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/accessibility_service_description"
+    android:accessibilityEventTypes="typeAllMask"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews|flagRequestTouchExplorationMode"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="100"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:settingsActivity="com.voidai.app.MainActivity" />`
   },
   {
     path: "capacitor.config.ts",

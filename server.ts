@@ -27,29 +27,38 @@ Aesthetic & Persona:
 app.post('/api/gemini/test-key', async (req, res) => {
   try {
     const { customApiKey } = req.body;
-    const keyToTest = customApiKey || process.env.GEMINI_API_KEY;
+    const keyToTest = (customApiKey || process.env.GEMINI_API_KEY || '').trim();
 
-    if (!keyToTest) {
-      return res.status(400).json({ valid: false, error: 'No API key provided.' });
+    if (!keyToTest || keyToTest === 'MY_GEMINI_API_KEY' || keyToTest.length < 15) {
+      return res.status(400).json({ 
+        valid: false, 
+        error: 'Please enter a valid Gemini API Key (format: AIzaSy...).' 
+      });
     }
 
-    const ai = new GoogleGenAI({ apiKey: keyToTest });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: 'Respond with the word "READY" if you can hear this tactical ping.',
-      config: {
-        temperature: 0.1,
-      }
-    });
+    try {
+      const ai = new GoogleGenAI({ apiKey: keyToTest });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: 'Respond with the word "READY" if you can hear this tactical ping.',
+        config: {
+          temperature: 0.1,
+        }
+      });
 
-    const reply = response.text || '';
-    if (reply) {
-      return res.json({ valid: true, model: 'gemini-2.5-flash', reply: reply.trim() });
-    } else {
-      return res.status(400).json({ valid: false, error: 'Received empty response from Gemini.' });
+      const reply = response.text || '';
+      if (reply) {
+        return res.json({ valid: true, model: 'gemini-2.5-flash', reply: reply.trim() });
+      } else {
+        return res.status(400).json({ valid: false, error: 'Received empty response from Gemini.' });
+      }
+    } catch (gErr: any) {
+      return res.status(400).json({ 
+        valid: false, 
+        error: gErr.message || 'Gemini API Key verification failed. Ensure your key is valid and enabled.' 
+      });
     }
   } catch (error: any) {
-    console.error('API Key Verification Error:', error);
     return res.status(400).json({ valid: false, error: error.message || 'Key validation failed.' });
   }
 });
@@ -60,57 +69,73 @@ app.post('/api/voice/test-key', async (req, res) => {
     const { voiceApiKey, provider = 'elevenlabs' } = req.body;
     const activeVoiceKey = (voiceApiKey || process.env.VOICE_API_KEY || process.env.ELEVENLABS_API_KEY || '').trim();
 
-    if (!activeVoiceKey) {
+    if (!activeVoiceKey && provider !== 'browser') {
       return res.status(400).json({ valid: false, error: 'No Voice API Key provided.' });
     }
 
     if (provider === 'elevenlabs') {
-      const resp = await fetch('https://api.elevenlabs.io/v1/user', {
-        headers: { 'xi-api-key': activeVoiceKey }
-      });
-      if (resp.ok) {
-        const userData = await resp.json();
-        const tier = userData?.subscription?.tier || 'creator';
-        const remainingChars = (userData?.subscription?.character_limit || 0) - (userData?.subscription?.character_count || 0);
-        return res.json({
-          valid: true,
-          provider: 'ElevenLabs Neural Engine',
-          tier,
-          remainingChars: Math.max(0, remainingChars),
-          voicePreset: 'Charon / Adam Deep Baritone'
+      if (activeVoiceKey.length < 10) {
+        return res.status(400).json({ valid: false, error: 'Please enter a valid ElevenLabs API Key.' });
+      }
+      try {
+        const resp = await fetch('https://api.elevenlabs.io/v1/user', {
+          headers: { 'xi-api-key': activeVoiceKey }
         });
-      } else {
-        const errJson = await resp.json().catch(() => ({}));
-        return res.status(400).json({
-          valid: false,
-          error: (errJson as any)?.detail?.message || 'ElevenLabs Voice API key rejected (401 Unauthorized).'
-        });
+        if (resp.ok) {
+          const userData = await resp.json();
+          const tier = userData?.subscription?.tier || 'creator';
+          const remainingChars = (userData?.subscription?.character_limit || 0) - (userData?.subscription?.character_count || 0);
+          return res.json({
+            valid: true,
+            provider: 'ElevenLabs Neural Engine',
+            tier,
+            remainingChars: Math.max(0, remainingChars),
+            voicePreset: 'Charon / Adam Deep Baritone'
+          });
+        } else {
+          const errJson = await resp.json().catch(() => ({}));
+          return res.status(400).json({
+            valid: false,
+            error: (errJson as any)?.detail?.message || 'ElevenLabs Voice API key rejected (401 Unauthorized).'
+          });
+        }
+      } catch (e: any) {
+        return res.status(400).json({ valid: false, error: e.message || 'ElevenLabs connection error.' });
       }
     } else if (provider === 'google_tts' || provider === 'gemini_voice') {
-      const testKey = activeVoiceKey || process.env.GEMINI_API_KEY;
-      if (!testKey) {
-        return res.status(400).json({ valid: false, error: 'No Google/Gemini key available.' });
-      }
-      const ai = new GoogleGenAI({ apiKey: testKey });
-      const ping = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: 'Confirm audio pipeline online. Respond with "AUDIO_ONLINE".',
-      });
-      if (ping.text) {
-        return res.json({
-          valid: true,
-          provider: 'Gemini Neural Audio Synthesizer',
-          tier: 'Google GenAI Audio',
-          voicePreset: 'Charon / Fenrir Tactical Voice'
+      const testKey = (activeVoiceKey || process.env.GEMINI_API_KEY || '').trim();
+      if (!testKey || testKey === 'MY_GEMINI_API_KEY' || testKey.length < 15) {
+        return res.status(400).json({ 
+          valid: false, 
+          error: 'Please enter a valid Google/Gemini Voice API Key (format: AIzaSy...).' 
         });
-      } else {
-        return res.status(400).json({ valid: false, error: 'Voice API test returned empty response.' });
+      }
+      try {
+        const ai = new GoogleGenAI({ apiKey: testKey });
+        const ping = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: 'Confirm audio pipeline online. Respond with "AUDIO_ONLINE".',
+        });
+        if (ping.text) {
+          return res.json({
+            valid: true,
+            provider: 'Gemini Neural Audio Synthesizer',
+            tier: 'Google GenAI Audio',
+            voicePreset: 'Charon / Fenrir Tactical Voice'
+          });
+        } else {
+          return res.status(400).json({ valid: false, error: 'Voice API test returned empty response.' });
+        }
+      } catch (gErr: any) {
+        return res.status(400).json({
+          valid: false,
+          error: gErr.message || 'Google/Gemini Voice API key is invalid or unauthenticated.'
+        });
       }
     } else {
       return res.json({ valid: true, provider: 'Device Native Synthesizer' });
     }
   } catch (err: any) {
-    console.error('Voice Key Test Error:', err);
     return res.status(400).json({ valid: false, error: err.message || 'Voice API test failed.' });
   }
 });

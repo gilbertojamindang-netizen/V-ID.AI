@@ -24,41 +24,40 @@ class VoidNativeBridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun requestMicrophonePermission() {
         Log.i(TAG, "Requesting RECORD_AUDIO permission via native bridge")
-        activity.requestMicrophonePermission()
+        activity.runOnUiThread {
+            activity.requestMicrophonePermission()
+        }
     }
 
     @JavascriptInterface
     fun requestCameraPermission() {
         Log.i(TAG, "Requesting CAMERA permission via native bridge")
-        activity.requestCameraPermission()
+        activity.runOnUiThread {
+            activity.requestCameraPermission()
+        }
     }
 
     @JavascriptInterface
-    fun requestPermission(permission: String) {
-        Log.i(TAG, "Requesting custom permission: $permission")
-        activity.requestSinglePermission(permission)
+    fun requestAllPermissions() {
+        Log.i(TAG, "Requesting all core permissions via native bridge")
+        activity.runOnUiThread {
+            activity.requestAllCorePermissions()
+        }
     }
 
     @JavascriptInterface
     fun openAccessibilitySettings() {
         Log.i(TAG, "Opening Android Accessibility Settings")
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        activity.runOnUiThread {
+            activity.openAccessibilitySettings()
         }
-        activity.startActivity(intent)
     }
 
     @JavascriptInterface
     fun openOverlaySettings() {
         Log.i(TAG, "Opening Display Over Other Apps Settings")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:${activity.packageName}")
-            ).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            activity.startActivity(intent)
+        activity.runOnUiThread {
+            activity.openOverlaySettings()
         }
     }
 
@@ -82,15 +81,12 @@ class VoidNativeBridge(private val activity: MainActivity) {
 
     @JavascriptInterface
     fun isAccessibilityEnabled(): Boolean {
-        return VoidAccessibilityService.isServiceRunning
+        return activity.isAccessibilityEnabled()
     }
 
     @JavascriptInterface
     fun checkPermissionStatus(permission: String): Boolean {
-        return ContextCompat.checkSelfPermission(
-            activity,
-            permission
-        ) == PackageManager.PERMISSION_GRANTED
+        return activity.isPermissionGranted(permission)
     }
 
     @JavascriptInterface
